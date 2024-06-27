@@ -3,7 +3,7 @@ import numpy as np
 from LOP_database.midi.read_midi import Read_midi
 
 # 目標資料夾路徑
-target_folder = "../LOP_database/test"
+target_folder = "../LOP_database/aligned"
 
 # 遍歷目標資料夾下的每個資料夾
 for root, dirs, files in os.walk(target_folder):

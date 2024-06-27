@@ -1,7 +1,7 @@
 import os
 
 # 目標資料夾路徑
-target_folder = "../LOP_database/test"
+target_folder = "../LOP_database/aligned"
 
 # 存儲曲名及其矩陣數量的列表
 songs_info = []

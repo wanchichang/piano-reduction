@@ -2,22 +2,6 @@ import os
 import numpy as np
 import re
 
-# import tensorflow as tf
-# from tensorflow.keras.layers import (
-#     Input,
-#     Conv2D,
-#     BatchNormalization,
-#     Reshape,
-#     LSTM,
-#     TimeDistributed,
-#     Dense,
-#     Flatten,
-#     Permute,
-#     Multiply,
-#     Softmax,
-# )
-# from tensorflow.keras.models import Model
-#
 
 instrument_categories = {
     "brass": set(),
@@ -79,13 +63,10 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
     current_matrix = None
     current_track = None
     # 創建一個大小為 (364, numOfTrack, 4*64, 128) 的所有元素初始化為0的 NumPy 陣列
-    data = np.zeros((numOfMeasure, numOfTrack, 4 * 64, 128))
+    data = np.zeros((numOfMeasure, numOfTrack, 4 * 16, 128))
     # 檢查陣列的形狀
     # print(data.shape)
 
-    # data = [[] for _ in range(364)]
-    # data = []
-    # print(o_data)
     f = open(pianoroll_file_path, "r")
     k = f.readlines()
     # print(k[1])
@@ -101,7 +82,7 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
     # print(len(k))
     for line in k:
         # print(line)
-        if line[:6] == "Matrix":
+        if line[:6] == "Phrase":
             measure = (measure + 1) % numOfMeasure
             # measure = getMeasure(line) - 1
             # print(measure)
@@ -124,14 +105,14 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
             # print(measure)
 
         # if len(current_array) == 256:
-        if cnt == 256:
+        if cnt == 64:
             # orchestra_data.append(current_array)
             arrays_np = np.array(current_array)
             # print(arrays_np.shape)
             # print(data[measure][trackNo].shape)
-
-            data[measure][trackNo] = data[measure][trackNo] + arrays_np
-
+            temp = data[measure][trackNo] + arrays_np
+            temp[temp > 0] = 1
+            data[measure][trackNo] = temp
             current_array = []
             cnt = 0
     # arrays_np = np.array(o_data)
@@ -218,8 +199,8 @@ fold_folder = "../LOP_database/aligned/folds"
 base_folder = "../LOP_database/aligned"
 
 folds = read_folds(fold_folder)
-# load_pianoroll_data(base_folder, folds, 4)
-read_pianoroll_files("../LOP_database/test/bouliane-8/", "orchestra", 4, 6)
+load_pianoroll_data(base_folder, folds, 4)
+# read_pianoroll_files("../LOP_database/test/bouliane-8/", "orchestra", 4, 6)
 
 # X_test, Y_test = load_pianoroll_data(base_folder, folds)
 # print(folds[0])
