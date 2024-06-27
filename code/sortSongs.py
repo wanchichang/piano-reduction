@@ -1,7 +1,7 @@
 import os
 
 # 目標資料夾路徑
-target_folder = "../LOP_database/aligned"
+target_folder = "../LOP_database/test"
 
 # 存儲曲名及其矩陣數量的列表
 songs_info = []
@@ -16,7 +16,7 @@ for root, dirs, files in os.walk(target_folder):
             with open(info_file_path, "r") as f:
                 first_line = f.readline().strip()
                 if first_line:
-                    parts = first_line.split("- Number of Matrices: ")
+                    parts = first_line.split("- Number of Phrases: ")
                     if len(parts) == 2:
                         num_matrices = int(parts[1])
                         songs_info.append((folder, num_matrices))

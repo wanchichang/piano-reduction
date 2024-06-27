@@ -107,8 +107,15 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
             # print(measure)
 
         elif line[0].isdigit():
+            # print()
             # values = line.split(",")
             values = [int(value) for value in line.split(",")]
+            values = np.array(values)
+
+            # print(values.shape)
+            # nonzero_indices = np.nonzero(values)
+
+            # print("非零值的索引：", nonzero_indices)
             current_array.append(values)
             cnt += 1
         elif line[:5] == "Track":
@@ -211,7 +218,9 @@ fold_folder = "../LOP_database/aligned/folds"
 base_folder = "../LOP_database/aligned"
 
 folds = read_folds(fold_folder)
-load_pianoroll_data(base_folder, folds, 4)
+# load_pianoroll_data(base_folder, folds, 4)
+read_pianoroll_files("../LOP_database/test/bouliane-8/", "orchestra", 4, 6)
+
 # X_test, Y_test = load_pianoroll_data(base_folder, folds)
 # print(folds[0])
 # o_data = read_pianoroll_files(
