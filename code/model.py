@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow.keras.utils import Sequence
 import os
 
+
 # 数据生成器类
 class DataGenerator(Sequence):
     def __init__(
@@ -45,6 +46,7 @@ class DataGenerator(Sequence):
 
     def on_epoch_end(self):
         np.random.shuffle(self.indices)
+
 
 # absolute path in ssh server
 X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
@@ -107,11 +109,15 @@ model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
 model.summary()
 
 history = model.fit(train_generator, epochs=10, validation_data=validation_generator)
+model.save("my_model_0707", save_format="tf")
+
+# plot
+
 import matplotlib.pyplot as plt
 
-# history = model.fit(X_train, Y_train, epochs=10, batch_size=32, validation_split=0.2)
 
-# 繪製 training loss 和 validation loss
+# 繪製和保存 Loss 圖像
+plt.figure(figsize=(8, 5))
 plt.plot(history.history["loss"], label="Training Loss")
 plt.plot(history.history["val_loss"], label="Validation Loss")
 plt.title("Training and Validation Loss")
@@ -120,4 +126,16 @@ plt.ylabel("Loss")
 plt.xticks(np.arange(1, len(history.history["loss"]) + 1, step=2))
 plt.legend()
 plt.savefig("training_validation_loss.png")
-plt.show()
+plt.close()  # 關閉當前圖像，避免覆蓋
+
+# 繪製和保存 Accuracy 圖像
+plt.figure(figsize=(8, 5))
+plt.plot(history.history["accuracy"], label="Training Accuracy")
+plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+plt.title("Training and Validation Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.xticks(np.arange(1, len(history.history["accuracy"]) + 1, step=2))
+plt.legend()
+plt.savefig("training_validation_accuracy.png")
+plt.close()  # 關閉當前圖像，避免覆蓋
