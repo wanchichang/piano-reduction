@@ -52,8 +52,16 @@ class DataGenerator(Sequence):
 X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
-batch_size = 16
+params = {
+    "batch_size": 8,
+    "epochs": 10,
+    "learning_rate": 0.001,
+    "input_shape": (64, 128, 4)
+}
+
+batch_size = params["batch_size"]
 validation_split = 0.2
+epochs = params["epochs"]
 
 # from tensorflow.keras.metrics import CosineSimilarity
 train_generator = DataGenerator(
@@ -107,10 +115,28 @@ model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 # model.compile(optimizer='adam', loss='mse', metrics=[CosineSimilarity(name='cosine_similarity')])
 model.summary()
+optimizer = model.optimizer
 
-history = model.fit(train_generator, epochs=10, validation_data=validation_generator)
-model.save("my_model_0707", save_format="tf")
+# 获取当前学习率
+current_learning_rate = optimizer.learning_rate.numpy()
+print(f"Current learning rate: {current_learning_rate}")
+history = model.fit(train_generator, epochs=epochs, validation_data=validation_generator)
+output_folder = "my_model_0713-1"
+model.save(output_folder, save_format="tf")
 
+# 指定保存路径
+save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
+
+# 确保目录存在
+os.makedirs(save_path, exist_ok=True)
+
+# 保存超参数到文本文件
+params_file_path = os.path.join(save_path, 'model_params.txt')
+with open(params_file_path, 'w') as f:
+    for key, value in params.items():
+        f.write(f"{key}: {value}\n")
+
+print(f"超参数已保存到 {params_file_path}")
 # plot
 
 import matplotlib.pyplot as plt
@@ -125,7 +151,7 @@ plt.xlabel("Epoch")
 plt.ylabel("Loss")
 plt.xticks(np.arange(1, len(history.history["loss"]) + 1, step=2))
 plt.legend()
-plt.savefig("training_validation_loss.png")
+plt.savefig(f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_loss.png")
 plt.close()  # 關閉當前圖像，避免覆蓋
 
 # 繪製和保存 Accuracy 圖像
@@ -137,5 +163,5 @@ plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
 plt.xticks(np.arange(1, len(history.history["accuracy"]) + 1, step=2))
 plt.legend()
-plt.savefig("training_validation_accuracy.png")
+plt.savefig(f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_accuracy.png")
 plt.close()  # 關閉當前圖像，避免覆蓋
