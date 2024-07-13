@@ -3,3 +3,5 @@
 SymphonyNet
 LOP_database/aligned
 .DS_Store
+code/__pycache__/
+*.py[cod]
