@@ -1,7 +1,7 @@
 # from util import getMeasure, getTrackNumber
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.utils import Sequence
+from tensorflow.keras.utils import Sequence, plot_model
 import os
 
 
@@ -53,7 +53,7 @@ X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
 params = {
-    "batch_size": 8,
+    "batch_size": 24,
     "epochs": 10,
     "learning_rate": 0.001,
     "input_shape": (64, 128, 4)
@@ -115,17 +115,20 @@ model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 # model.compile(optimizer='adam', loss='mse', metrics=[CosineSimilarity(name='cosine_similarity')])
 model.summary()
+
+output_folder = "my_model_0727"
+# 指定保存路径
+save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
+
+plot_model(model, to_file=f"{save_path}/model_plot.png", show_shapes=True, show_layer_names=True)
 optimizer = model.optimizer
 
 # 获取当前学习率
 current_learning_rate = optimizer.learning_rate.numpy()
 print(f"Current learning rate: {current_learning_rate}")
 history = model.fit(train_generator, epochs=epochs, validation_data=validation_generator)
-output_folder = "my_model_0713-1"
 model.save(output_folder, save_format="tf")
 
-# 指定保存路径
-save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
 
 # 确保目录存在
 os.makedirs(save_path, exist_ok=True)
