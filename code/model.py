@@ -53,7 +53,7 @@ X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
 params = {
-    "batch_size": 24,
+    "batch_size": 16,
     "epochs": 10,
     "learning_rate": 0.001,
     "input_shape": (64, 128, 4)
@@ -101,9 +101,23 @@ x = tf.keras.layers.Permute((2, 1))(x)  # Transpose for attention
 x = simple_attention(x, x)
 x = tf.keras.layers.Permute((2, 1))(x)  # Transpose back
 
-x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
+#x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
 
-x = tf.keras.layers.Reshape((64, 512))(x)
+# Adding parameters to the LSTM layer
+x = tf.keras.layers.LSTM(
+    units=512,  # 输出维度
+    activation='tanh',  # 激活函数
+    recurrent_activation='sigmoid',  # 递归激活函数
+    dropout=0.2,  # 输入丢弃比例
+    recurrent_dropout=0.2,  # 递归状态丢弃比例
+    return_sequences=True,  # 是否返回输出序列中的每个输出
+    return_state=False,  # 是否返回最后一个状态
+    go_backwards=False,  # 是否反向处理输入序列
+    stateful=False  # 是否使用有状态 LSTM
+)(x)
+
+
+# x = tf.keras.layers.Reshape((64, 512))(x)
 
 # 改变输出层，使其输出形状为 (64, 128, 1)
 x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(128, activation="sigmoid"))(
@@ -116,11 +130,15 @@ model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
 # model.compile(optimizer='adam', loss='mse', metrics=[CosineSimilarity(name='cosine_similarity')])
 model.summary()
 
-output_folder = "my_model_0727"
+output_folder = "my_model_0727-test"
+
 # 指定保存路径
 save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
 
-plot_model(model, to_file=f"{save_path}/model_plot.png", show_shapes=True, show_layer_names=True)
+# 确保目录存在
+os.makedirs(save_path, exist_ok=True)
+
+plot_model(model, to_file=f"{save_path}/model_plot.png", show_shapes=True, show_layer_names=True,)
 optimizer = model.optimizer
 
 # 获取当前学习率
@@ -129,9 +147,6 @@ print(f"Current learning rate: {current_learning_rate}")
 history = model.fit(train_generator, epochs=epochs, validation_data=validation_generator)
 model.save(output_folder, save_format="tf")
 
-
-# 确保目录存在
-os.makedirs(save_path, exist_ok=True)
 
 # 保存超参数到文本文件
 params_file_path = os.path.join(save_path, 'model_params.txt')
