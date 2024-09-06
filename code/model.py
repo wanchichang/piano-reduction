@@ -6,6 +6,11 @@ from tensorflow.keras.utils import Sequence, plot_model
 import os
 from tensorflow.keras import regularizers
 from playability import custom_loss_with_playability
+from tensorflow.keras import backend as K
+
+
+def binary_threshold(x):
+    return tf.where(x >= 0.5, 1.0, 0.0)
 
 
 def debug_loss(y_true, y_pred):
@@ -64,7 +69,7 @@ class DataGenerator(Sequence):
 X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
-output_folder = "my_model_test"
+output_folder = "my_model_0905-1"
 # 定义 EarlyStopping 回调
 early_stopping = EarlyStopping(
     monitor="val_loss",  # 监控验证集损失
@@ -82,8 +87,8 @@ checkpoint = ModelCheckpoint(
 )
 
 params = {
-    "batch_size": 16,
-    "epochs": 30,
+    "batch_size": 24,
+    "epochs": 1,
     "learning_rate": 0.001,
     "input_shape": (64, 128, 4),
 }
@@ -122,7 +127,7 @@ x = tf.keras.layers.Conv2D(
     (3, 3),
     activation="relu",
     padding="same",
-    kernel_regularizer=regularizers.l2(0.01),
+    kernel_regularizer=regularizers.l1(0.00),
 )(inputs)
 x = tf.keras.layers.BatchNormalization()(x)
 x = tf.keras.layers.Conv2D(
@@ -130,7 +135,7 @@ x = tf.keras.layers.Conv2D(
     (3, 3),
     activation="relu",
     padding="same",
-    kernel_regularizer=regularizers.l2(0.01),
+    kernel_regularizer=regularizers.l1(0.00),
 )(x)
 x = tf.keras.layers.BatchNormalization()(x)
 x = tf.keras.layers.Conv2D(
@@ -138,7 +143,7 @@ x = tf.keras.layers.Conv2D(
     (3, 3),
     activation="relu",
     padding="same",
-    kernel_regularizer=regularizers.l2(0.01),
+    kernel_regularizer=regularizers.l1(0.00),
 )(x)
 x = tf.keras.layers.BatchNormalization()(x)
 
@@ -148,20 +153,20 @@ x = tf.keras.layers.Permute((2, 1))(x)  # Transpose for attention
 x = simple_attention(x, x)
 x = tf.keras.layers.Permute((2, 1))(x)  # Transpose back
 
-# x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
+x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
 
 # Adding parameters to the LSTM layer
-x = tf.keras.layers.LSTM(
-    units=512,  # 输出维度
-    activation="tanh",  # 激活函数
-    recurrent_activation="sigmoid",  # 递归激活函数
-    dropout=0.4,  # 输入丢弃比例
-    recurrent_dropout=0.4,  # 递归状态丢弃比例
-    return_sequences=True,  # 是否返回输出序列中的每个输出
-    return_state=False,  # 是否返回最后一个状态
-    go_backwards=False,  # 是否反向处理输入序列
-    stateful=False,  # 是否使用有状态 LSTM
-)(x)
+# x = tf.keras.layers.LSTM(
+#     units=512,  # 输出维度
+#     activation="tanh",  # 激活函数
+#     recurrent_activation="sigmoid",  # 递归激活函数
+#     dropout=0.0,  # 输入丢弃比例
+#     recurrent_dropout=0.0,  # 递归状态丢弃比例
+#     return_sequences=True,  # 是否返回输出序列中的每个输出
+#     return_state=False,  # 是否返回最后一个状态
+#     go_backwards=False,  # 是否反向处理输入序列
+#     stateful=False,  # 是否使用有状态 LSTM
+# )(x)
 
 
 # x = tf.keras.layers.Reshape((64, 512))(x)
@@ -170,19 +175,19 @@ x = tf.keras.layers.LSTM(
 x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(128, activation="sigmoid"))(
     x
 )  # Predicting for each pitch
+x = tf.keras.layers.Lambda(lambda z: K.in_train_phase(z, binary_threshold(z)))(x)
+# x = tf.keras.layers.Lambda(binary_threshold)(x)  # Apply binary thresholding
 outputs = tf.keras.layers.Reshape((64, 128, 1))(x)  # Adjust to match the label shape
 
 model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 # model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-# model.compile(optimizer='adam', loss='mse', metrics=[CosineSimilarity(name='cosine_similarity')])
 model.compile(
     optimizer="adam",
     loss=lambda y_true, y_pred: custom_loss_with_playability(
-        y_true, y_pred, lambda_param=0.3
+        y_true, y_pred, lambda_param=0.2
     ),
     metrics=["accuracy"],
 )
-# model.compile(optimizer="adam", loss=debug_loss, metrics=["accuracy"])
 
 model.summary()
 
@@ -257,3 +262,44 @@ plt.savefig(
     f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_accuracy.png"
 )
 plt.close()  # 關閉當前圖像，避免覆蓋
+
+
+def create_inference_function(model):
+    input_tensor = model.input
+    output_tensor = model.output
+    func = tf.keras.backend.function([input_tensor], [output_tensor])
+    return func
+
+
+# 获取模型的预测函数
+inference_func = create_inference_function(model)
+
+# 生成一个示例输入
+example_input = np.random.randint(0, 2, size=(1, 64, 128, 4), dtype=np.int32)
+
+# 使用模型进行预测
+example_output = inference_func([example_input])[0]
+np.set_printoptions(threshold=np.inf)  # 设置为打印所有内容
+# 打印示例输入和输出
+# print("Example Input:")
+# print(example_input)
+
+# print("Example Output:")
+# print(example_output)
+import os
+
+with open("output.txt", "w") as f:
+    f.write("Example Input:\n")
+    np.savetxt(
+        f, example_input.flatten(), fmt="%d", delimiter=",", header="Flat Input Array"
+    )
+    f.write("\nExample Output:\n")
+    np.savetxt(
+        f,
+        example_output.flatten(),
+        fmt="%.5f",
+        delimiter=",",
+        header="Flat Output Array",
+    )
+
+print("Results saved to output.txt")
