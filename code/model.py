@@ -69,7 +69,7 @@ class DataGenerator(Sequence):
 X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
-output_folder = "my_model_0905-1"
+output_folder = "plt_test"
 # 定义 EarlyStopping 回调
 early_stopping = EarlyStopping(
     monitor="val_loss",  # 监控验证集损失
@@ -87,8 +87,8 @@ checkpoint = ModelCheckpoint(
 )
 
 params = {
-    "batch_size": 24,
-    "epochs": 1,
+    "batch_size": 16,
+    "epochs": 20,
     "learning_rate": 0.001,
     "input_shape": (64, 128, 4),
 }
@@ -153,20 +153,20 @@ x = tf.keras.layers.Permute((2, 1))(x)  # Transpose for attention
 x = simple_attention(x, x)
 x = tf.keras.layers.Permute((2, 1))(x)  # Transpose back
 
-x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
+# x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
 
 # Adding parameters to the LSTM layer
-# x = tf.keras.layers.LSTM(
-#     units=512,  # 输出维度
-#     activation="tanh",  # 激活函数
-#     recurrent_activation="sigmoid",  # 递归激活函数
-#     dropout=0.0,  # 输入丢弃比例
-#     recurrent_dropout=0.0,  # 递归状态丢弃比例
-#     return_sequences=True,  # 是否返回输出序列中的每个输出
-#     return_state=False,  # 是否返回最后一个状态
-#     go_backwards=False,  # 是否反向处理输入序列
-#     stateful=False,  # 是否使用有状态 LSTM
-# )(x)
+x = tf.keras.layers.LSTM(
+    units=512,  # 输出维度
+    activation="tanh",  # 激活函数
+    recurrent_activation="sigmoid",  # 递归激活函数
+    dropout=0.4,  # 输入丢弃比例
+    recurrent_dropout=0.0,  # 递归状态丢弃比例
+    return_sequences=True,  # 是否返回输出序列中的每个输出
+    return_state=False,  # 是否返回最后一个状态
+    go_backwards=False,  # 是否反向处理输入序列
+    stateful=False,  # 是否使用有状态 LSTM
+)(x)
 
 
 # x = tf.keras.layers.Reshape((64, 512))(x)
@@ -184,7 +184,7 @@ model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 model.compile(
     optimizer="adam",
     loss=lambda y_true, y_pred: custom_loss_with_playability(
-        y_true, y_pred, lambda_param=0.2
+        y_true, y_pred, lambda_param=0.6
     ),
     metrics=["accuracy"],
 )
@@ -226,42 +226,54 @@ with open(params_file_path, "w") as f:
         f.write(f"{key}: {value}\n")
 
 print(f"超参数已保存到 {params_file_path}")
-# plot
 
+
+# plot
 import matplotlib.pyplot as plt
 
-
-# 繪製和保存 Loss 圖像
 plt.figure(figsize=(8, 5))
-plt.plot(history.history["loss"], label="Training Loss")
-plt.plot(history.history["val_loss"], label="Validation Loss")
+# 创建从 1 开始的 epochs 数组
+epochs = np.arange(1, len(history.history["loss"]) + 1)
+
+# 画图时，需要让 x 轴从 1 开始，数据也从 1 对应
+plt.plot(epochs, history.history["loss"], label="Training Loss")
+plt.plot(epochs, history.history["val_loss"], label="Validation Loss")
+
 plt.title("Training and Validation Loss")
 plt.xlabel("Epoch")
 plt.ylabel("Loss")
-# plt.xticks(np.arange(1, len(history.history["loss"]) + 1, step=2))
-epochs = np.arange(1, len(history.history["loss"]) + 1)
-plt.xticks(epochs[epochs % 2 == 0])  # 只显示偶数
+
+# 设置 x 轴刻度
+plt.xticks(epochs)  # 将x坐标设为从1开始
+
 plt.legend()
 plt.savefig(
     f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_loss.png"
 )
-plt.close()  # 關閉當前圖像，避免覆蓋
+plt.close()
 
 # 繪製和保存 Accuracy 圖像
 plt.figure(figsize=(8, 5))
-plt.plot(history.history["accuracy"], label="Training Accuracy")
-plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+
+# 创建从 1 开始的 epochs 数组
+epochs = np.arange(1, len(history.history["accuracy"]) + 1)
+
+# 画图时，需要让 x 轴从 1 开始，数据也从 1 对应
+plt.plot(epochs, history.history["accuracy"], label="Training Accuracy")
+plt.plot(epochs, history.history["val_accuracy"], label="Validation Accuracy")
+
 plt.title("Training and Validation Accuracy")
 plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
-# plt.xticks(np.arange(1, len(history.history["accuracy"]) + 1, step=2))
-epochs = np.arange(1, len(history.history["loss"]) + 1)
-plt.xticks(epochs[epochs % 2 == 0])  # 只显示偶数
+plt.ylabel("Loss")
+
+# 设置 x 轴刻度
+plt.xticks(epochs)  # 将x坐标设为从1开始
+
 plt.legend()
 plt.savefig(
     f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_accuracy.png"
 )
-plt.close()  # 關閉當前圖像，避免覆蓋
+plt.close()
 
 
 def create_inference_function(model):
