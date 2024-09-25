@@ -4,8 +4,16 @@ import os
 from playability import (
     custom_loss_with_playability,
 )  # 确保自定义损失函数已经正确定义并导入
+from tensorflow.keras import backend as K
 
-model_folder = "my_model_0817"
+# from model import binary_threshold
+
+
+def binary_threshold(x):
+    return tf.where(x >= 0.5, 1.0, 0.0)
+
+
+model_folder = "my_model_0923"
 
 # 加载保存的模型，并指定自定义损失函数
 model = tf.keras.models.load_model(
