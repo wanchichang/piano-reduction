@@ -1,25 +1,84 @@
-# from util import getMeasure, getTrackNumber
-import numpy as np
 import tensorflow as tf
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.utils import Sequence, plot_model
-import os
+from tensorflow.keras.layers import (
+    Layer,
+    Input,
+    Conv2D,
+    BatchNormalization,
+    Reshape,
+    Permute,
+    LSTM,
+    Dense,
+    Lambda,
+    TimeDistributed,
+)
+from tensorflow.keras.models import Model
 from tensorflow.keras import regularizers
-from playability import custom_loss_with_playability
-from tensorflow.keras import backend as K
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.utils import Sequence
+import numpy as np
+import matplotlib.pyplot as plt
+import os
 
 
-def binary_threshold(x):
-    return tf.where(x >= 0.5, 1.0, 0.0)
+# 自定义 SelectiveBinaryCrossentropy 层
+class SelectiveBinaryCrossentropy(Layer):
+    def __init__(self, **kwargs):
+        super(SelectiveBinaryCrossentropy, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        input_data, y_true, y_pred = inputs
+        mask = tf.reduce_sum(input_data, axis=-1) > 0  # shape: (batch_size, 64, 128)
+        mask = tf.expand_dims(mask, axis=-1)  # Expand to (batch_size, 64, 128, 1)
+        y_true_filtered = tf.boolean_mask(y_true, mask)
+        y_pred_filtered = tf.boolean_mask(y_pred, mask)
+        loss = tf.keras.losses.binary_crossentropy(y_true_filtered, y_pred_filtered)
+        return tf.reduce_mean(loss)
 
 
-def debug_loss(y_true, y_pred):
-    # 打印 y_true 和 y_pred 的形状
-    tf.print("y_true shape:", tf.shape(y_true))
-    tf.print("y_pred shape:", tf.shape(y_pred))
+# 自定义损失函数
+def custom_loss(y_true, y_pred):
+    input_data = y_true[..., 1:]  # 从标签中获取附加的输入数据部分
+    y_true_only = y_true[..., :1]  # 提取真实标签部分
+    selective_bce_layer = SelectiveBinaryCrossentropy()
+    return selective_bce_layer([input_data, y_true_only, y_pred])
 
-    # 计算一个简单的损失，这里使用的是均方误差（MSE）作为示例
-    return tf.keras.losses.mean_squared_error(y_true, y_pred)
+
+# 创建自定义层来实现只在非零位置上计算准确率
+class SelectiveAccuracy(Layer):
+    def __init__(self, **kwargs):
+        super(SelectiveAccuracy, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        input_data, y_true, y_pred = inputs
+
+        # 生成 mask 以标记非零位置
+        mask = tf.reduce_sum(input_data, axis=-1) > 0  # shape: (batch_size, 64, 128)
+        mask = tf.expand_dims(mask, axis=-1)  # 扩展到 (batch_size, 64, 128, 1)
+
+        # 使用 mask 筛选出非零位置
+        y_true_filtered = tf.boolean_mask(y_true, mask)
+        y_pred_filtered = tf.boolean_mask(y_pred, mask)
+
+        # 计算筛选后的准确率
+        accuracy = tf.reduce_mean(
+            tf.cast(tf.equal(y_true_filtered, tf.round(y_pred_filtered)), tf.float32)
+        )
+        return accuracy
+
+
+# 包装成一个指标函数
+def custom_accuracy(y_true, y_pred):
+    input_data = y_true[..., 1:]  # 从标签中获取附加的输入数据部分
+    y_true_only = y_true[..., :1]  # 提取真实标签部分
+    selective_accuracy_layer = SelectiveAccuracy()
+    return selective_accuracy_layer([input_data, y_true_only, y_pred])
+
+
+# 简单 Attention 层
+def simple_attention(inputs, queries):
+    attention = tf.keras.layers.Attention()([queries, inputs])
+    return attention
 
 
 # 数据生成器类
@@ -59,177 +118,115 @@ class DataGenerator(Sequence):
             0, 2, 3, 1
         )  # 将形状从 (batch_size, 1, 64, 128) 调整为 (batch_size, 64, 128, 1)
 
-        return X_batch, Y_batch
+        # 将标签和输入数据结合，以便在 custom_loss 中使用
+        Y_combined = np.concatenate([Y_batch, X_batch], axis=-1)
+        return X_batch, Y_combined
 
     def on_epoch_end(self):
         np.random.shuffle(self.indices)
 
 
-# absolute path in ssh server
+# 路径设置
 X_train_path = "/home/wanchichang/piano-reduction/LOP_database/X_train.npy"
 Y_train_path = "/home/wanchichang/piano-reduction/LOP_database/Y_train.npy"
 
-output_folder = "plt_test"
-# 定义 EarlyStopping 回调
+# 定义 EarlyStopping 和 ModelCheckpoint 回调
+output_folder = "my_model_1207-32-lstm03"
 early_stopping = EarlyStopping(
-    monitor="val_loss",  # 监控验证集损失
-    patience=5,  # 如果在 5 个 epoch 内没有改善，则停止训练
-    verbose=1,  # 打印训练过程中回调的日志
-    restore_best_weights=True,  # 恢复具有最佳验证集损失的模型权重
+    monitor="val_loss", patience=5, verbose=1, restore_best_weights=True
 )
-
-# 其他必要的回调（如保存模型检查点）
+# checkpoint = ModelCheckpoint(
+#     filepath=f"{output_folder}/best_model.h5",
+#     monitor="val_loss",
+#     save_best_only=True,
+#     verbose=1,
+# )
 checkpoint = ModelCheckpoint(
-    filepath=f"{output_folder}/best_model.h5",  # 保存最佳模型的路径
-    monitor="val_loss",  # 监控验证集损失
-    save_best_only=True,  # 仅保存最好的模型
-    verbose=1,  # 打印模型保存的日志
+    filepath=f"{output_folder}/best_model.keras",  # 修改扩展名为 .keras
+    monitor="val_loss",
+    save_best_only=True,
+    verbose=1,
 )
+strategy = tf.distribute.MirroredStrategy()
 
-params = {
-    "batch_size": 16,
-    "epochs": 20,
-    "learning_rate": 0.001,
-    "input_shape": (64, 128, 4),
-}
+with strategy.scope():
+# 模型定义
+    input_shape = (64, 128, 4)
+    inputs = Input(shape=input_shape)
 
-batch_size = params["batch_size"]
-validation_split = 0.2
-epochs = params["epochs"]
+    x = Conv2D(
+        16,
+        (3, 3),
+        activation="relu",
+        padding="same",
+        kernel_regularizer=regularizers.l1(0.00),
+    )(inputs)
+    x = BatchNormalization()(x)
+    x = Conv2D(
+        32,
+        (3, 3),
+        activation="relu",
+        padding="same",
+        kernel_regularizer=regularizers.l1(0.00),
+    )(x)
+    x = BatchNormalization()(x)
+    x = Conv2D(
+        64,
+        (3, 3),
+        activation="relu",
+        padding="same",
+        kernel_regularizer=regularizers.l1(0.00),
+    )(x)
+    x = BatchNormalization()(x)
 
-# from tensorflow.keras.metrics import CosineSimilarity
-train_generator = DataGenerator(
-    X_train_path, Y_train_path, batch_size, validation_split, is_validation=False
-)
-validation_generator = DataGenerator(
-    X_train_path, Y_train_path, batch_size, validation_split, is_validation=True
-)
+    x = Reshape((64, 128 * 64))(x)  # Flatten keeping the sequence dimension
+    x = Permute((2, 1))(x)  # Transpose for attention
+    x = simple_attention(x, x)
+    x = Permute((2, 1))(x)  # Transpose back
 
+    x = LSTM(
+        units=512,
+        activation="tanh",
+        recurrent_activation="sigmoid",
+        dropout=0.3,
+        recurrent_dropout=0.3,
+        return_sequences=True,
+    )(x)
 
-# 定义模型
-def simple_attention(query, value):
-    key_dim = query.shape[-1]
-    scores = tf.matmul(
-        query, query, transpose_b=True
-    )  # (batch_size, seq_length, seq_length)
-    scores = scores / tf.sqrt(tf.cast(key_dim, tf.float32))
-    weights = tf.nn.softmax(scores, axis=-1)  # Attention weights
-    output = tf.matmul(weights, value)  # (batch_size, seq_length, value_dim)
-    return output
+    x = TimeDistributed(Dense(128, activation="sigmoid"))(x)  # Predicting for each pitch
+    outputs = Reshape((64, 128, 1))(x)  # Adjust to match label shape
 
+    model = Model(inputs=inputs, outputs=outputs)
 
-input_shape = (64, 128, 4)  # Updated input shape
+    model.compile(
+        optimizer=Adam(learning_rate=0.001), loss=custom_loss, metrics=[custom_accuracy]
+    )
+    model.summary()
+    save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
 
-inputs = tf.keras.layers.Input(shape=input_shape)
+    # 确保目录存在
+    os.makedirs(save_path, exist_ok=True)
 
-x = tf.keras.layers.Conv2D(
-    16,
-    (3, 3),
-    activation="relu",
-    padding="same",
-    kernel_regularizer=regularizers.l1(0.00),
-)(inputs)
-x = tf.keras.layers.BatchNormalization()(x)
-x = tf.keras.layers.Conv2D(
-    32,
-    (3, 3),
-    activation="relu",
-    padding="same",
-    kernel_regularizer=regularizers.l1(0.00),
-)(x)
-x = tf.keras.layers.BatchNormalization()(x)
-x = tf.keras.layers.Conv2D(
-    64,
-    (3, 3),
-    activation="relu",
-    padding="same",
-    kernel_regularizer=regularizers.l1(0.00),
-)(x)
-x = tf.keras.layers.BatchNormalization()(x)
+    # 训练模型
+    batch_size = 32
+    validation_split = 0.2
+    epochs = 30
 
-x = tf.keras.layers.Reshape((64, 128 * 64))(x)  # Flatten keeping the sequence dimension
+    train_generator = DataGenerator(
+        X_train_path, Y_train_path, batch_size, validation_split, is_validation=False
+    )
+    validation_generator = DataGenerator(
+        X_train_path, Y_train_path, batch_size, validation_split, is_validation=True
+    )
 
-x = tf.keras.layers.Permute((2, 1))(x)  # Transpose for attention
-x = simple_attention(x, x)
-x = tf.keras.layers.Permute((2, 1))(x)  # Transpose back
-
-# x = tf.keras.layers.LSTM(512, return_sequences=True)(x)
-
-# Adding parameters to the LSTM layer
-x = tf.keras.layers.LSTM(
-    units=512,  # 输出维度
-    activation="tanh",  # 激活函数
-    recurrent_activation="sigmoid",  # 递归激活函数
-    dropout=0.4,  # 输入丢弃比例
-    recurrent_dropout=0.0,  # 递归状态丢弃比例
-    return_sequences=True,  # 是否返回输出序列中的每个输出
-    return_state=False,  # 是否返回最后一个状态
-    go_backwards=False,  # 是否反向处理输入序列
-    stateful=False,  # 是否使用有状态 LSTM
-)(x)
-
-
-# x = tf.keras.layers.Reshape((64, 512))(x)
-
-# 改变输出层，使其输出形状为 (64, 128, 1)
-x = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(128, activation="sigmoid"))(
-    x
-)  # Predicting for each pitch
-x = tf.keras.layers.Lambda(lambda z: K.in_train_phase(z, binary_threshold(z)))(x)
-# x = tf.keras.layers.Lambda(binary_threshold)(x)  # Apply binary thresholding
-outputs = tf.keras.layers.Reshape((64, 128, 1))(x)  # Adjust to match the label shape
-
-model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
-# model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model.compile(
-    optimizer="adam",
-    loss=lambda y_true, y_pred: custom_loss_with_playability(
-        y_true, y_pred, lambda_param=0.6
-    ),
-    metrics=["accuracy"],
-)
-
-model.summary()
-
-
-# 指定保存路径
-save_path = f"/home/wanchichang/piano-reduction/code/{output_folder}"
-
-# 确保目录存在
-os.makedirs(save_path, exist_ok=True)
-
-plot_model(
-    model,
-    to_file=f"{save_path}/model_plot.png",
-    show_shapes=True,
-    show_layer_names=True,
-)
-optimizer = model.optimizer
-
-# 获取当前学习率
-current_learning_rate = optimizer.learning_rate.numpy()
-print(f"Current learning rate: {current_learning_rate}")
-history = model.fit(
-    train_generator,
-    epochs=epochs,  # 最大训练 epoch 数
-    validation_data=validation_generator,
-    callbacks=[early_stopping],  # 使用 EarlyStopping 回调
-)
-# history = model.fit(train_generator, epochs=epochs, validation_data=validation_generator)
-model.save(output_folder, save_format="tf")
-
-
-# 保存超参数到文本文件
-params_file_path = os.path.join(save_path, "model_params.txt")
-with open(params_file_path, "w") as f:
-    for key, value in params.items():
-        f.write(f"{key}: {value}\n")
-
-print(f"超参数已保存到 {params_file_path}")
-
-
+    history = model.fit(
+        train_generator,
+        epochs=epochs,
+        validation_data=validation_generator,
+        callbacks=[early_stopping, checkpoint],
+    )
+    model.save(output_folder, save_format="tf")
 # plot
-import matplotlib.pyplot as plt
 
 plt.figure(figsize=(8, 5))
 # 创建从 1 开始的 epochs 数组
@@ -256,15 +253,15 @@ plt.close()
 plt.figure(figsize=(8, 5))
 
 # 创建从 1 开始的 epochs 数组
-epochs = np.arange(1, len(history.history["accuracy"]) + 1)
+epochs = np.arange(1, len(history.history["custom_accuracy"]) + 1)
 
 # 画图时，需要让 x 轴从 1 开始，数据也从 1 对应
-plt.plot(epochs, history.history["accuracy"], label="Training Accuracy")
-plt.plot(epochs, history.history["val_accuracy"], label="Validation Accuracy")
+plt.plot(epochs, history.history["custom_accuracy"], label="Training Accuracy")
+plt.plot(epochs, history.history["val_custom_accuracy"], label="Validation Accuracy")
 
 plt.title("Training and Validation Accuracy")
 plt.xlabel("Epoch")
-plt.ylabel("Loss")
+plt.ylabel("Accuracy")
 
 # 设置 x 轴刻度
 plt.xticks(epochs)  # 将x坐标设为从1开始
@@ -274,44 +271,3 @@ plt.savefig(
     f"/home/wanchichang/piano-reduction/code/{output_folder}/training_validation_accuracy.png"
 )
 plt.close()
-
-
-def create_inference_function(model):
-    input_tensor = model.input
-    output_tensor = model.output
-    func = tf.keras.backend.function([input_tensor], [output_tensor])
-    return func
-
-
-# 获取模型的预测函数
-inference_func = create_inference_function(model)
-
-# 生成一个示例输入
-example_input = np.random.randint(0, 2, size=(1, 64, 128, 4), dtype=np.int32)
-
-# 使用模型进行预测
-example_output = inference_func([example_input])[0]
-np.set_printoptions(threshold=np.inf)  # 设置为打印所有内容
-# 打印示例输入和输出
-# print("Example Input:")
-# print(example_input)
-
-# print("Example Output:")
-# print(example_output)
-import os
-
-with open("output.txt", "w") as f:
-    f.write("Example Input:\n")
-    np.savetxt(
-        f, example_input.flatten(), fmt="%d", delimiter=",", header="Flat Input Array"
-    )
-    f.write("\nExample Output:\n")
-    np.savetxt(
-        f,
-        example_output.flatten(),
-        fmt="%.5f",
-        delimiter=",",
-        header="Flat Output Array",
-    )
-
-print("Results saved to output.txt")
