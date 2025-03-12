@@ -37,7 +37,8 @@ def getPhrase(string):
 
 
 def getTrackNumber(string):
-    instrument_name = string.split(": ")[1]
+    instrument_name = string.split(": ")[1].strip()
+    # print(instrument_name)
     if instrument_name == "Piano":
         return 0
     if instrument_name in instrument_categories["brass"]:
@@ -54,16 +55,16 @@ def getTrackNumber(string):
 target_folder = "../LOP_database/test/hand_picked_Spotify-55"
 
 
-def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
-    print(numOfMeasure, numOfTrack)
+def read_pianoroll_files(folder_path, pianorollType, numOfTrack, num_of_phrase):
+    print(num_of_phrase, numOfTrack)
     # 讀取 orchestra.txt
     pianoroll_file_path = os.path.join(folder_path, f"{pianorollType}.txt")
     # orchestra_file_path = os.path.join(folder_path, "orchestra.txt")
     # orchestra_data = []
     current_matrix = None
     current_track = None
-    # 創建一個大小為 (364, numOfTrack, 4*64, 128) 的所有元素初始化為0的 NumPy 陣列
-    data = np.zeros((numOfMeasure, numOfTrack, 4 * 16, 128))
+    # 創建一個大小為 (num_of_phrase, numOfTrack, 4*64, 128) 的所有元素初始化為0的 NumPy 陣列
+    data = np.zeros((num_of_phrase, numOfTrack, 8 * 16, 128))
     # 檢查陣列的形狀
     # print(data.shape)
 
@@ -83,7 +84,7 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
     for line in k:
         # print(line)
         if line[:6] == "Phrase":
-            measure = (measure + 1) % numOfMeasure
+            measure = measure % num_of_phrase
             # measure = getMeasure(line) - 1
             # print(measure)
 
@@ -92,6 +93,7 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
             # values = line.split(",")
             values = [int(value) for value in line.split(",")]
             values = np.array(values)
+            # print(values.shape)
 
             # print(values.shape)
             # nonzero_indices = np.nonzero(values)
@@ -101,20 +103,23 @@ def read_pianoroll_files(folder_path, pianorollType, numOfTrack, numOfMeasure):
             cnt += 1
         elif line[:5] == "Track":
             trackNo = getTrackNumber(line)
+            # print(trackNo, line)
 
             # print(measure)
 
         # if len(current_array) == 256:
-        if cnt == 64:
+        if cnt == 128:
             # orchestra_data.append(current_array)
             arrays_np = np.array(current_array)
-            # print(arrays_np.shape)
+            print(arrays_np.shape)
             # print(data[measure][trackNo].shape)
             temp = data[measure][trackNo] + arrays_np
             temp[temp > 0] = 1
             data[measure][trackNo] = temp
             current_array = []
             cnt = 0
+            measure = measure + 1
+
     # arrays_np = np.array(o_data)
     # print(arrays_np.shape)
     # print(len(data[0]))
@@ -141,12 +146,12 @@ def load_pianoroll_data(base_folder, folds, test_fold):
             f = open(info_path, "r")
             k = f.readlines()
             print(k[0])
-            numOfMeasure = getPhrase(k[0])
+            num_of_phrase = getPhrase(k[0])
             # numOfMeasure = getPhrase(song)
             orchestra_data = read_pianoroll_files(
-                song_folder, "orchestra", 4, numOfMeasure
+                song_folder, "orchestra", 4, num_of_phrase
             )
-            piano_data = read_pianoroll_files(song_folder, "piano", 1, numOfMeasure)
+            piano_data = read_pianoroll_files(song_folder, "piano", 1, num_of_phrase)
             for phrase in range(len(orchestra_data)):
                 X_train.append(orchestra_data[phrase])
                 Y_train.append(piano_data[phrase])
@@ -154,8 +159,8 @@ def load_pianoroll_data(base_folder, folds, test_fold):
     # all_data.append(fold_data)
     X_train = np.array(X_train)
     Y_train = np.array(Y_train)
-    np.save("../LOP_database/X_train.npy", X_train)
-    np.save("../LOP_database/Y_train.npy", Y_train)
+    #np.save("../LOP_database/X_sw_8_train.npy", X_train)
+    #np.save("../LOP_database/Y_sw_8_train.npy", Y_train)
 
     for song in folds[test_fold]:
         # print(song)
@@ -166,19 +171,19 @@ def load_pianoroll_data(base_folder, folds, test_fold):
         f = open(info_path, "r")
         k = f.readlines()
         print(k[0])
-        numOfMeasure = getPhrase(k[0])
+        num_of_phrase = getPhrase(k[0])
         # print(numOfMeasure)
         #
-        orchestra_data = read_pianoroll_files(song_folder, "orchestra", 4, numOfMeasure)
-        piano_data = read_pianoroll_files(song_folder, "piano", 1, numOfMeasure)
+        orchestra_data = read_pianoroll_files(song_folder, "orchestra", 4, num_of_phrase)
+        piano_data = read_pianoroll_files(song_folder, "piano", 1, num_of_phrase)
         for phrase in range(len(orchestra_data)):
             X_test.append(orchestra_data[phrase])
             Y_test.append(piano_data[phrase])
 
     X_test = np.array(X_test)
     Y_test = np.array(Y_test)
-    np.save("../LOP_database/X_test", X_test)
-    np.save("../LOP_database/Y_test", Y_test)
+    #np.save("../LOP_database/X_8_sw_test", X_test)
+    #np.save("../LOP_database/Y_8_sw_test", Y_test)
     # print(X_test.shape, Y_test.shape)
 
     # return X_train, Y_train, X_test, Y_test
@@ -195,8 +200,8 @@ def read_folds(fold_folder):
     return folds
 
 
-fold_folder = "../LOP_database/aligned/folds"
-base_folder = "../LOP_database/aligned"
+fold_folder = "../LOP_database/aligned_sw_8/folds"
+base_folder = "../LOP_database/aligned_sw_8"
 
 folds = read_folds(fold_folder)
 load_pianoroll_data(base_folder, folds, 4)
